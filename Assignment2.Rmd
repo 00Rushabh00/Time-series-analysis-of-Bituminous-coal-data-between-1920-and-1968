@@ -1,0 +1,242 @@
+---
+title: "Assignment 2"
+author: "Rushabh Khara"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    extra_dependencies: float
+header-includes: 
+    - \usepackage{placeins} 
+geometry: left=1.5cm,right=1.5cm,top=1.5cm,bottom=1.25cm
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( fig.pos = "H", out.extra = "", fig.align='center', echo = FALSE, out.width = "50%", message = FALSE)
+```
+
+```{r}
+library(MASS)
+load("/Users/rushabhkhara/Files/University/STAT3011/Data/classdata.RData")
+```
+
+## Introduction
+
+This report is intended to provided an in-depth analysis of the Bituminous coal data between 1920 and 1968. The analysis starts with visualisation of the time series data, variance examination, transformation and further going on to decipher trends, seasonal effects, and finally the irregular effects. Intention is to provide a simple yet powerful model that captures the data appropriately. Decisions made during the analysis have been backed up with reasoning and clear explanations. 
+
+## Analysis 
+
+```{r, include =FALSE}
+# It is observed using the `ts()` function that the it is a annual time series data. The observations are annual productions in million tons.
+coal <- bicoal.tons
+
+ts(coal)
+```
+
+### Variance Analysis
+
+Throughout the time period from 1920 to 1968, the data points show a fairly uniform spread around a central tendency. There isn't a noticeable pattern where the spread of points gets wider or narrower as time progresses. If we were to draw imaginary horizontal lines capturing the bulk of the data for each period, the distance between these lines would remain relatively consistent throughout the timeline.
+
+```{r}
+
+plot(coal,type="b",pch=1,main="Plot of Bitumous Coal Production between 1920 and 1968",ylab="Production in Millions of Net Tons",xlab="Time")
+```
+
+### Transformation
+
+The data doesn't seem to have heteroscedasticity problem. However, it would be beneficial to check for transformations to see if the data can have more constant
+variance.
+
+The square root and log transformation plots below exhibit a nearly identical spread 
+of data. Aside from a shift in the y-axis scale, the differences are hardly 
+noticeable. Given this, it's advisable not to apply any transformations. 
+Implementing them would only add complexity to the model without yielding 
+significant benefits. Hence, we proceed with the original scale.
+
+```{r, fig.width=15, fig.height=5, out.width="75%"}
+par(mfrow = c(1,2))
+#par(mar = c(10,4,4,1))
+# Square Root
+plot(sqrt(coal),type="b",pch=1,main="Square Root Transformation",
+ylab="Production in Millions of Net Tons",xlab="Time")
+
+# Log 
+plot(log(coal),type="b",pch=1,main="Log Transformation",ylab="Production in Millions of Net Tons",xlab="Time")
+
+```
+
+### Trend 
+
+Fitting the lowess curve, we observe a rather linear behaviour with a slight 
+cyclic trend in the time series. There is no point assuming their is a trend 
+without checking by fitting models as the lowess curve might appear non-linear
+or linear based on shape and size of the plot. 
+
+```{r}
+plot(coal,type="b",pch=1,main="Plot of Bitumous Coal Production between 1920 and 1968 \n with fitted lowess curve",ylab="Production in Millions of Net Tons",xlab="Time")
+lines(lowess(time(coal),coal))
+```
+
+To determine the most suitable trend for the data, we'll evaluate four models: 
+no trend, linear, quadratic, and cubic. It is important that we center the time
+before fitting the cubic model to avoid computational errors.
+
+Looking at the models in plot below, it is observed that no trend, linear, and
+quadratic models have highly similar pattern with slight difference. The quadratic
+model is limited in its ability to capture trends, as it can curve only once.
+The cubic model identifies the initial drop but lags significantly in capturing 
+subsequent rises. Due to this lag, the cubic model isn't well-suited for this data.
+Given the similarities in fit between the no trend and linear models, we 
+prioritize simplicity. Therefore, the no trend model is chosen.
+
+```{r, out.width= "70%"}
+library(MASS)  # for rlm()
+
+# Plotting the data
+plot(coal, type="b", pch=1,
+     main="Plot of Bitumous Coal Production between 1920 and 1968 \n with fitted trend models",
+     ylab="Production in Millions of Net Tons",
+     xlab="Time")
+
+# Add a LOWESS line
+lines(lowess(time(coal), coal), col="black") 
+
+# Add a horizontal line at the mean of the data
+abline(h = mean(coal), col = "darkorange")
+
+# Add a linear trend line
+fit_lin <- rlm(coal ~ time(coal))
+abline(fit_lin$coefficients[1], fit_lin$coefficients[2], col="darkgreen")
+
+# Add a quadratic trend line
+fit_quad <- rlm(coal ~ cbind(time(coal), time(coal)^2))
+lines(as.vector(time(coal)), fitted(fit_quad), col="red")
+
+# Add a cubic trend line
+fit_cubic <- rlm(coal ~ cbind(time(coal), time(coal)^2, time(coal)^3))
+lines(as.vector(time(coal)), fitted(fit_cubic), col="blue")
+
+# Add the legend inside the main plot, adjusting its position as needed.
+# In this case, I've used "topright", but you can change it depending on your preference.
+legend("topright", 
+       legend = c("LOWESS", "No Trend", "Linear", "Quadratic", "Cubic"),
+       fill = c("black", "darkorange", "darkgreen", "red", "blue"),
+       cex = 0.5)
+
+
+
+```
+
+### Seasonal Effect
+
+Upon inspecting the plotted time series data, discerning a definitive seasonal effect proves to be complex. The observed wave-like fluctuations hint at potential seasonal trends, yet the limited time span of the data prevents a confident identification of consistent patterns across multiple cycles. Given the dataset's frequency of 1, advanced decomposition methods like STL are inapplicable, limiting our analysis. Furthermore, without comprehensive context or extended data, it's challenging to differentiate genuine seasonal effects from anomalies or external factors. Consequently, while there are indications of potential seasonality, making conclusive determinations from the present data would be premature. Hence, we choose to ignore seasonal effects.
+
+\newpage
+### Irregular Effect
+
+We'll employ the Box-Jenkins ARMA Model Identification to discern the irregular effects and select the optimal autoregressive model. Observing the ACF plot, a slow decay is evident, signaling potential stationarity issues in the data. The PACF reveals significant spikes at lags 1 and 4. However, before fitting an AR model based on the PACF, we'll consider differencing the data. Afterward, we'll re-examine these plots to determine if the stationarity concern has been addressed.
+
+```{r}
+# As we have chosen the no trend model, we will calculate the residuals by 
+# substracting the mean from each data point.
+par(mar=c(1,4,3,3))
+
+fit = mean(coal)
+
+res = coal - fit
+ 
+# ACF and PACF
+Ident(res)
+
+final_model <- Raic(res)
+```
+
+The ACF and PACF plots for the differenced data are presented below. The stationarity issue appears to have been addressed with only one significant spike at lag 0 and spike that barely touches the threshold at lag 2. Notably, the PACF plot shows just one significant spike at lag 2. This represents a notable improvement over the non-differenced data, where an AR(4) model would have been required to be fitted. Now, we can simply fit an simpler AR(2) model.
+
+```{r}
+par(mar=c(1,4,3,3))
+
+fit_diff = mean(diff(coal))
+
+res_diff = diff(coal) - fit_diff
+
+#ACF and PACF
+Ident(res_diff)
+
+final_model <- Raic(res_diff)
+```
+
+After implementing the AR(2) model, the PACF plot below shows no significant spikes. The ACF plot displays just one spike at lag 0, which is anticipated. Both ACF and PACF indicate no lingering dependence. It seems the AR(2) model has effectively captured the majority of the dependence.
+
+```{r}
+par(mar=c(1,4,3,3))
+res = final_model$resid[,2]
+fv = rep(mean(diff(coal)), length(diff(coal)) - 1)
+
+Ident(res)
+```
+
+### Diagnostic Plots
+
+Residual Plot: A consistent spread is observable, indicating homoscedastic behavior. 
+
+Residual vs Fitted Plot: The adoption of a 'no trend' model results in all fitted values being the mean of the data, explaining the straight line formation.
+
+Quantile-Quantile (QQ) Plot: The data points closely adhere to the normal line, underscoring the satisfaction of the normality assumption.
+
+Absolute Residual Plot: Due to the lack of variance in the x-axis fitted values, the lowess curve isn't discernible. This uniformity can be attributed to our 'no trend' approach where all values converge to the mean.
+
+```{r, fig.width=8, fig.height =8}
+par(mfrow=c(2,2), pty="s", mar=c(1, 3, 3, 3))
+
+# Residual Plot
+plot(1:(length(diff(coal))-1), res, type="b", pch=1,
+     xlab="Time", ylab="Residuals", main="Residual plot",
+     cex.main=1.2, cex.lab=1.1, cex.axis=1)
+
+# Residuals versus Fitted Values
+plot(fv, res,
+     main="Residuals versus fitted values",
+     ylab="Residuals", xlab="Fitted Values",
+     cex.main=1.2, cex.lab=1.1, cex.axis=1)
+
+# Quantile-Quantile Plot
+qqnorm(res, main="Quantile-Quantile plot",
+       ylab="Residuals", xlab="Gaussian Quantiles",
+       cex.main=1.2, cex.lab=1.1, cex.axis=1)
+qqline(res)
+abline(h=0, v=0, col="grey")
+
+# Absolute Residuals versus Fitted Values
+plot(fv, abs(res),
+     main="Absolute Residuals versus fitted values",
+     ylab="Absolute Residuals", xlab="Fitted Values",
+     cex.main=1.2, cex.lab=1.1, cex.axis=1)
+lines(lowess(fv, abs(res)))
+
+# Adding outer text
+mtext("Residual plots from no trend and AR(2) fit to the bitumous coal data", outer=T, cex=1)
+
+```
+
+
+### Final Model
+
+The final model can be expressed as follows:
+
+- Let **\( Coal_{t} - Coal_{t-1} \)** represent the *differenced data*.
+- Let **\( X_i \)** denote the *Irregular Effect*.
+
+Given these definitions:
+
+\[
+Coal_{t} - Coal_{t-1} = \text{mean}(Coal_{t} - Coal_{t-1}) + X_i
+\]
+
+\[
+X_i = -0.136 \times X_{i-1} - 0.296 \times X_{i-2}
+\]
+
+
+## Conclusion
+
+The Bituminous coal data from 1920 to 1968 underwent a comprehensive analysis, revealing no strong seasonal or trend patterns within this time frame. Initial observations pointed to potential variance fluctuations, but detailed assessments dispelled these concerns. While transformations like the square root and log were considered, they offered no added advantage, prompting the retention of the original data scale. To tackle the non-stationarity observed in the initial irregular component analysis, the data was differenced, leading to the adoption of an AR(2) model as opposed to an AR(4) model that would have been adopted in a non differenced data. This model adeptly captured the series' nuances, a claim further solidified by diagnostic plots which aligned well with our modeling assumptions. In conclusion, during these years, the coal production remained relatively stable with deviations primarily attributed to irregular factors.
